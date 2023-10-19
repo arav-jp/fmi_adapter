@@ -24,37 +24,60 @@
 
 #include "fmi_adapter/FMIAdapter.h"
 
+#include <fmilib.h>
 
 int main(int argc, char** argv) {
   ros::init(argc, argv, "fmi_adapter_node");
   ros::NodeHandle n("~");
 
+  ROS_INFO("SET: fmuPath\n");
   std::string fmuPath;
   if (!n.getParam("fmu_path", fmuPath)) {
     ROS_ERROR("Parameter 'fmu_path' not specified!");
     throw std::runtime_error("Parameter 'fmu_path' not specified!");
   }
 
-  double stepSizeAsDouble = 0.0;
+  double stepSizeAsDouble = 0.5;
   n.getParam("step_size", stepSizeAsDouble);
-  ros::Duration stepSize(stepSizeAsDouble);
+ROS_INFO("SET: step_size: %f\n",stepSizeAsDouble);
 
+  ros::Duration stepSize(stepSizeAsDouble);
+ROS_INFO("SET: ROS step: %f\n",stepSize.toSec());
+
+  ROS_INFO("SET: adapter\n");
   fmi_adapter::FMIAdapter adapter(fmuPath, stepSize);
-  for (const std::string & name : adapter.getParameterNames()) {
-    ROS_DEBUG("FMU has parameter '%s'", name.c_str());
+  ROS_INFO("END: adapter\n");
+  
+  const std::vector<fmi2_import_variable_t*> InitParam = adapter.getParameters();
+  
+  for(fmi2_import_variable_t* x : InitParam)
+  {
+//ROS_INFO("InitParam: '%s', '%f'", fmi2_import_get_variable_name(x), fmi2_import_get_real_variable_start(fmi2_import_get_variable_as_real(x)));
+	if(fmi2_import_get_causality(x)==fmi2_causality_enu_parameter)
+	{
+	adapter.setInitialValue(fmi2_import_get_variable_name(x), fmi2_import_get_real_variable_start(fmi2_import_get_variable_as_real(x)));
+	}
   }
+  
+//  for (const std::string & name : adapter.getParameterNames()) {
+    //ROS_INFO("FMU has parameter '%s'", name.c_str());
+//  }
   adapter.initializeFromROSParameters(n);
 
+ROS_INFO("END: initializeFromROSParameters\n");
+  
   std::map<std::string, ros::Subscriber> subscribers;
   for (const std::string& name : adapter.getInputVariableNames()) {
     std::string rosifiedName = fmi_adapter::FMIAdapter::rosifyName(name);
     ros::Subscriber subscriber =
         n.subscribe<std_msgs::Float64>(rosifiedName, 1000, [&adapter, name](const std_msgs::Float64::ConstPtr& msg) {
           std::string myName = name;
+//ROS_INFO("Set: Sub:'%s', data:'%f'\n",name.c_str(),msg->data);
           adapter.setInputValue(myName, ros::Time::now(), msg->data);
         });
     subscribers[name] = subscriber;
   }
+ROS_INFO("END: Create Subscriber\n");
 
   std::map<std::string, ros::Publisher> publishers;
   for (const std::string& name : adapter.getOutputVariableNames()) {
@@ -62,14 +85,22 @@ int main(int argc, char** argv) {
     publishers[name] = n.advertise<std_msgs::Float64>(rosifiedName, 1000);
   }
 
+ROS_INFO("END: Create Publisher\n");
+  
   adapter.exitInitializationMode(ros::Time::now());
+  //adapter.exitInitializationMode(ros::Time(0.0));
+ROS_INFO("END: exitInitializationMode\n");
 
-  double updatePeriod = 0.01;  // Default is 0.01s
+  double updatePeriod = 1;  // Default is 0.01s
   n.getParam("update_period", updatePeriod);
 
   ros::Timer timer = n.createTimer(ros::Duration(updatePeriod), [&](const ros::TimerEvent& event) {
     if (adapter.getSimulationTime() < event.current_expected) {
-      adapter.doStepsUntil(event.current_expected);
+ROS_INFO("Start: doStepsUntil\n");
+//      adapter.doStepsUntil(event.current_expected);
+      adapter.doStepsUntil(ros::Time::now());
+//      adapter.doStep();
+ROS_INFO("End: doStepsUntil\n");
     } else {
       ROS_INFO("Simulation time %f is greater than timer's time %f. Is your step size to large?",
                adapter.getSimulationTime().toSec(), event.current_expected.toSec());
@@ -78,6 +109,7 @@ int main(int argc, char** argv) {
       std_msgs::Float64 msg;
       msg.data = adapter.getOutputValue(name);
       publishers[name].publish(msg);
+//ROS_INFO("Topic:'%s', data:'%f' \n",name.c_str(), msg.data);
     }
   });
 

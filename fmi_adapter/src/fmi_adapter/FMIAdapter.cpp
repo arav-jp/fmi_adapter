@@ -296,19 +296,23 @@ void FMIAdapter::exitInitializationMode(ros::Time simulationTime) {
   if (!inInitializationMode_) {
     throw std::runtime_error("FMU is no longer in initialization mode!");
   }
-
-  fmi2_status_t fmiStatus = fmi2_import_exit_initialization_mode(fmu_);
-  if (fmiStatus != fmi2_status_ok) {
-    throw std::runtime_error("fmi2_import_exit_initialization_mode failed!");
-  }
+ROS_INFO("END: Check inInitializationMode\n");
+  
+//  fmi2_status_t fmiStatus = fmi2_import_exit_initialization_mode(fmu_);
+//  if (fmiStatus != fmi2_status_ok) {
+//    throw std::runtime_error("fmi2_import_exit_initialization_mode failed!");
+//  }
   inInitializationMode_ = false;
+ROS_INFO("END: Check fmiStatus\n");
 
   fmuTimeOffset_ = simulationTime - ros::Time(0.0);
   assert(fmuTime_ == 0.0);
 
+ROS_INFO("START: getInputVariables\n");
   for (fmi2_import_variable_t* variable : getInputVariables()) {  // TODO(Ralph) Avoid creation of std::vector here.
     std::map<ros::Time, double>& inputValues = inputValuesByVariable_[variable];
     if (inputValues.empty() || inputValues.begin()->first > simulationTime) {
+//ROS_INFO("CHECK: inputValues.empty\n");
       fmi2_value_reference_t valueReference = fmi2_import_get_variable_vr(variable);
       fmi2_real_t value;
       fmi2_import_get_real(fmu_, &valueReference, 1, &value);
@@ -348,10 +352,15 @@ void FMIAdapter::doStepInternal(const ros::Duration& stepSize) {
     std::map<ros::Time, double>& inputValues = inputValuesByVariable_[variable];
     assert(!inputValues.empty() && (inputValues.begin()->first - fmuTimeOffset_).toSec() <= fmuTime_);
     while (inputValues.size() >= 2 && (std::next(inputValues.begin())->first - fmuTimeOffset_).toSec() <= fmuTime_) {
+//ROS_INFO("inputValues.size %ld\n",inputValues.size());
+//ROS_INFO("tgtTime %f\n",(std::next(inputValues.begin())->first - fmuTimeOffset_).toSec());
+//ROS_INFO("fmuTime_ %f\n",fmuTime_);
       inputValues.erase(inputValues.begin());
     }
-    assert(!inputValues.empty() && (inputValues.begin()->first - fmuTimeOffset_).toSec() <= fmuTime_);
+//ROS_INFO("inputValues.erase\n");
+    //assert(!inputValues.empty() && (inputValues.begin()->first - fmuTimeOffset_).toSec() <= fmuTime_);
     double value = inputValues.begin()->second;
+#if 1
     if (interpolateInput_ && inputValues.size() > 1) {
       double t0 = (inputValues.begin()->first - fmuTimeOffset_).toSec();
       double t1 = (std::next(inputValues.begin())->first - fmuTimeOffset_).toSec();
@@ -360,13 +369,16 @@ void FMIAdapter::doStepInternal(const ros::Duration& stepSize) {
       double x1 = std::next(inputValues.begin())->second;
       value = weight * x0 + (1.0 - weight) * x1;
     }
-
+#endif
     fmi2_value_reference_t valueReference = fmi2_import_get_variable_vr(variable);
     fmi2_import_set_real(fmu_, &valueReference, 1, &value);
   }
-
-  const fmi2_boolean_t doStep = fmi2_true;
-  fmi2_status_t fmiStatus = fmi2_import_do_step(fmu_, fmuTime_, stepSize.toSec(), doStep);
+//ROS_INFO("do_step start\n");
+//ROS_INFO("fmuTime_:%f, step_size:%f\n",fmuTime_, stepSize.toSec());
+  //const fmi2_boolean_t doStep = fmi2_true;
+//  fmi2_status_t fmiStatus = fmi2_import_do_step(fmu_, fmuTime_, stepSize.toSec(), doStep);
+  fmi2_status_t fmiStatus = fmi2_import_do_step(fmu_, fmuTime_, stepSize.toSec(), fmi2_true);
+//ROS_INFO("do_step end\n");
   if (fmiStatus != fmi2_status_ok) {
     throw std::runtime_error("fmi2_import_do_step failed!");
   }
@@ -384,8 +396,9 @@ ros::Time FMIAdapter::doStepsUntil(const ros::Time& simulationTime) {
     ROS_ERROR("Given time %f is before current simulation time %f!", targetFMUTime, fmuTime_);
     throw std::invalid_argument("Given time is before current simulation time!");
   }
-
+//ROS_INFO("targetFMUTime: %f",targetFMUTime);
   while (fmuTime_ + stepSize_.toSec() / 2.0 < targetFMUTime) {
+//ROS_INFO("curTime: %f",fmuTime_ + stepSize_.toSec() / 2.0);
     doStepInternal(stepSize_);
   }
 
@@ -453,7 +466,7 @@ void FMIAdapter::setInitialValue(fmi2_import_variable_t* variable, double value)
   fmi2_import_set_real(fmu_, &valueReference, 1, &value);
 
   std::string name = fmi2_import_get_variable_name(variable);
-  ROS_INFO("Set initial value of variable '%s' to %f", name.c_str(), value);
+  //ROS_INFO("Set initial value of variable '%s' to %f", name.c_str(), value);
 }
 
 
@@ -468,11 +481,15 @@ void FMIAdapter::setInitialValue(const std::string& variableName, double value) 
 
 
 void FMIAdapter::initializeFromROSParameters(const ros::NodeHandle& handle) {
+ROS_INFO("initializeFromROSParameters\n");
   for (fmi2_import_variable_t* variable : helpers::getVariablesFromFMU(fmu_)) {
     std::string name = fmi2_import_get_variable_name(variable);
+//ROS_INFO("fmi2_import_get_variable_name: %s\n",name.c_str() );
     name = rosifyName(name);
+//ROS_INFO("getVariablesFromFMU '%s'\n",name.c_str());
     double value = 0.0;
     if (handle.getParam(name, value)) {
+    ROS_INFO("SET ROSParameter '%s', '%f'\n", name.c_str(),value);
       setInitialValue(variable, value);
     }
   }
