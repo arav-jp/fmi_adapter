@@ -65,19 +65,26 @@ ROS_INFO("SET: ROS step: %f\n",stepSize.toSec());
   adapter.initializeFromROSParameters(n);
 
 ROS_INFO("END: initializeFromROSParameters\n");
-  
+
   std::map<std::string, ros::Subscriber> subscribers;
   for (const std::string& name : adapter.getInputVariableNames()) {
     std::string rosifiedName = fmi_adapter::FMIAdapter::rosifyName(name);
+//ROS_INFO("Set: Sub:'%s', data:'%s'\n",rosifiedName.c_str(),name.c_str());
     ros::Subscriber subscriber =
         n.subscribe<std_msgs::Float64>(rosifiedName, 1000, [&adapter, name](const std_msgs::Float64::ConstPtr& msg) {
           std::string myName = name;
-//ROS_INFO("Set: Sub:'%s', data:'%f'\n",name.c_str(),msg->data);
           adapter.setInputValue(myName, ros::Time::now(), msg->data);
         });
+//ROS_INFO("Set: Sub:'%s', data:'%s'\n",rosifiedName.c_str(),name.c_str());
     subscribers[name] = subscriber;
   }
-ROS_INFO("END: Create Subscriber\n");
+
+  const std::vector<fmi2_import_variable_t*> InputName = adapter.getInputVariables();
+  for(fmi2_import_variable_t* x : InputName)
+  {
+     adapter.setInitialValue(fmi2_import_get_variable_name(x), fmi2_import_get_real_variable_start(fmi2_import_get_variable_as_real(x)));
+  }
+ROS_INFO("END: Make Subscriber\n");
 
   std::map<std::string, ros::Publisher> publishers;
   for (const std::string& name : adapter.getOutputVariableNames()) {
@@ -85,7 +92,7 @@ ROS_INFO("END: Create Subscriber\n");
     publishers[name] = n.advertise<std_msgs::Float64>(rosifiedName, 1000);
   }
 
-ROS_INFO("END: Create Publisher\n");
+ROS_INFO("END: Make Publisher\n");
   
   adapter.exitInitializationMode(ros::Time::now());
   //adapter.exitInitializationMode(ros::Time(0.0));
@@ -96,11 +103,11 @@ ROS_INFO("END: exitInitializationMode\n");
 
   ros::Timer timer = n.createTimer(ros::Duration(updatePeriod), [&](const ros::TimerEvent& event) {
     if (adapter.getSimulationTime() < event.current_expected) {
-ROS_INFO("Start: doStepsUntil\n");
-//      adapter.doStepsUntil(event.current_expected);
-      adapter.doStepsUntil(ros::Time::now());
+//ROS_INFO("Start: doStepsUntil\n");
+      adapter.doStepsUntil(event.current_expected);
+//      adapter.doStepsUntil(ros::Time::now());
 //      adapter.doStep();
-ROS_INFO("End: doStepsUntil\n");
+//ROS_INFO("End: doStepsUntil\n");
     } else {
       ROS_INFO("Simulation time %f is greater than timer's time %f. Is your step size to large?",
                adapter.getSimulationTime().toSec(), event.current_expected.toSec());

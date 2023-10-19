@@ -360,7 +360,8 @@ void FMIAdapter::doStepInternal(const ros::Duration& stepSize) {
 //ROS_INFO("inputValues.erase\n");
     //assert(!inputValues.empty() && (inputValues.begin()->first - fmuTimeOffset_).toSec() <= fmuTime_);
     double value = inputValues.begin()->second;
-#if 1
+//ROS_INFO("set real value: %s, %f\n",fmi2_import_get_variable_name(variable),value);
+
     if (interpolateInput_ && inputValues.size() > 1) {
       double t0 = (inputValues.begin()->first - fmuTimeOffset_).toSec();
       double t1 = (std::next(inputValues.begin())->first - fmuTimeOffset_).toSec();
@@ -369,9 +370,10 @@ void FMIAdapter::doStepInternal(const ros::Duration& stepSize) {
       double x1 = std::next(inputValues.begin())->second;
       value = weight * x0 + (1.0 - weight) * x1;
     }
-#endif
+
     fmi2_value_reference_t valueReference = fmi2_import_get_variable_vr(variable);
     fmi2_import_set_real(fmu_, &valueReference, 1, &value);
+//ROS_INFO("set real value: %f\n",value);
   }
 //ROS_INFO("do_step start\n");
 //ROS_INFO("fmuTime_:%f, step_size:%f\n",fmuTime_, stepSize.toSec());
@@ -466,7 +468,7 @@ void FMIAdapter::setInitialValue(fmi2_import_variable_t* variable, double value)
   fmi2_import_set_real(fmu_, &valueReference, 1, &value);
 
   std::string name = fmi2_import_get_variable_name(variable);
-  //ROS_INFO("Set initial value of variable '%s' to %f", name.c_str(), value);
+//ROS_INFO("Set initial value of variable '%s' to %f", name.c_str(), value);
 }
 
 
